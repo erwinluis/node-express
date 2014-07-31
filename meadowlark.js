@@ -45,7 +45,7 @@ app.get('/tours/request-group-rate', function(req, res){
 });
 
 // 404 catch-all handler (middleware)
-app.use(function(req, res, next){;
+app.use(function(req, res, next){
   res.status(404);
   res.render('404');
 });
