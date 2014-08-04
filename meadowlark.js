@@ -73,7 +73,7 @@ app.get('/headers', function(req, res){
   for(var name in req.headers) s += name + ': ' +
     req.headers[name] + '\n';
   res.send(s);
-})
+});
 
 app.get('/', function(req, res){
   res.render('home');
