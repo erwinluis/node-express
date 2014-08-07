@@ -85,6 +85,16 @@ app.use(function(req, res, next){
   next();
 });
 
+// mail support
+var nodemailer = require('nodemailer');
+var mailTransport = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: credentials.gmail.user,
+    pass: credentials.gmail.password
+  }
+});
+
 // routes
 
 app.get('/headers', function(req, res){
@@ -315,6 +325,18 @@ app.post('/cart/checkout', function(req, res){
   var cart = req.session.cart;
   if(!cart) next();
   // TODO send confirmation email
+  var email = req.body.email || '';
+  // input validation
+  if(!email.match(VALID_EMAIL_REGEX)) return res.next(new Error('Invalid email address.'));
+  mailTransport.sendMail({
+    from: '"Erwin Gonzalez" <erwinluisgonzalez@gmail.com>',
+    to: 'email',
+    subject: 'Scout Street',
+    html: '<h1>Thanks for stopping by today</h1>',
+    generateTextFromHtml: true
+  }, function(err){
+    if(err) console.error('Unable to send email: ' + error);
+  });
   res.redirect(303, '/');
 });
 
