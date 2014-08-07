@@ -6,6 +6,8 @@ var fortune = require('./lib/fortune.js');
 
 var formidable = require('formidable');
 
+var cartValidation = require('./lib/cartValidation.js');
+
 var app = express();
 
 // set up handlebars view engine
@@ -183,7 +185,7 @@ Product.find = function(conditions, fields, options, cb){
   cb(null, products.filter(function(p){
     if(conditions.category && p.category !== conditions.category) return false;
     if(conditions.slug && p.slug !== conditions.slug) return false;
-    if(isFinite(conditions.sku) && p.sku !==Number(conditions.sku)) return false;
+    if(isFinite(conditions.sku) && p.sku!==Number(conditions.sku)) return false;
     return true;
   }));
 };
@@ -281,6 +283,9 @@ app.get('/adventures/:subcat/:name', function(req, res, next){
     res.render('adventure', { adventure: adventure});
   });
 });
+
+app.use(cartValidation.checkWaivers);
+app.use(cartValidation.checkGuestCounts);
 
 app.post('/cart/add', function(req, res, next){
   var cart = req.session.cart || (req.session.cart = []);
