@@ -2,6 +2,8 @@ var express = require('express');
 
 var credentials = require('./credentials.js');
 
+var emailService = require('./lib/email.js')(credentials);
+
 var fortune = require('./lib/fortune.js');
 
 var formidable = require('formidable');
@@ -83,16 +85,6 @@ app.use(function(req, res, next){
   if(!res.locals.partials) res.locals.partials = {};
   res.locals.partials.weather = getWeatherData();
   next();
-});
-
-// mail support
-var nodemailer = require('nodemailer');
-var mailTransport = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: credentials.gmail.user,
-    pass: credentials.gmail.password
-  }
 });
 
 // routes
@@ -298,11 +290,11 @@ app.use(cartValidation.checkWaivers);
 app.use(cartValidation.checkGuestCounts);
 
 app.post('/cart/add', function(req, res, next){
-  var cart = req.session.cart || (req.session.cart = []);
+  var cart = req.session.cart || (req.session.cart = { items: [] });
   Product.findOne({ sku: req.body.sku }, function(err, product){
     if(err) return next(err);
     if(!product) return next(new Error('Unknown product SKU: ' + req.body.sku));
-    cart.push({
+    cart.items.push({
       product: product,
       guests: req.body.guests || 0
     });
@@ -310,8 +302,9 @@ app.post('/cart/add', function(req, res, next){
   });
 });
 
-app.get('/cart', function(req, res){
-  var cart = req.session.cart || (req.session.cart = []);
+app.get('/cart', function(req, res, next){
+  var cart = req.session.cart;
+  if(!cart) next();
   res.render('cart', { cart: cart });
 });
 
@@ -321,23 +314,36 @@ app.get('/cart/checkout', function(req, res, next){
   res.render('cart-checkout');
 });
 
+app.get('/cart/thank-you', function(req, res){
+  res.render('cart-thank-you', { cart: req.session.cart });
+});
+
+app.get('/email/cart/thank-you', function(req, res){
+  res.render('email/cart-thank-you', { cart: req.session.cart, layout: null});
+});
+
 app.post('/cart/checkout', function(req, res){
   var cart = req.session.cart;
-  if(!cart) next();
+  if(!cart) next(new Error('Cart does not exist.'));
   // TODO send confirmation email
+  var name = req.body.name || '';
   var email = req.body.email || '';
   // input validation
   if(!email.match(VALID_EMAIL_REGEX)) return res.next(new Error('Invalid email address.'));
-  mailTransport.sendMail({
-    from: '"Erwin Gonzalez" <erwinluisgonzalez@gmail.com>',
-    to: 'email',
-    subject: 'Scout Street',
-    html: '<h1>Thanks for stopping by today</h1>',
-    generateTextFromHtml: true
-  }, function(err){
-    if(err) console.error('Unable to send email: ' + error);
+  // assign a random cart ID; normally we would use a database ID here
+  cart.number = Math.random().toString().replace(/^0\.0*/, '');
+  cart.billing = {
+    name: name,
+    email: email
+  }
+  res.render('email/cart-thank-you',
+    { layout: null, cart: cart}, function(err, html){
+      if(err) console.log('error in email template');
+      emailService.send(cart.billing.email,
+                        'Thank you for booking your trip with Meadowlark Travel',
+                        html);
   });
-  res.redirect(303, '/');
+  res.render('cart-thank-you', {cart: cart});
 });
 
 // 404 catch-all handler (middleware)
