@@ -1,3 +1,5 @@
+var http = require('http');
+
 var express = require('express');
 
 var credentials = require('./credentials.js');
@@ -27,6 +29,18 @@ app.engine('handlebars', handlebars.engine);
 app.set('view engine', 'handlebars');
 
 app.set('port', process.env.PORT || 3000);
+
+// logging
+switch(app.get('env')){
+  case 'development':
+    // compact, colorful dev logging
+    app.use(require('morgan')('dev'));
+    break;
+  case 'production':
+    // module 'express-logger' supports daily log rotation
+    app.use(require('express-logger')({ path: __dirname + '/log/requests.log'}));
+    break;
+}
 
 app.use(require('cookie-parser')(credentials.cookieSecret));
 app.use(require('express-session')());
@@ -359,7 +373,8 @@ app.use(function(err, req, res, next){
   res.render('500');
 });
 
-app.listen(app.get('port'), function(){
-  console.log('Express started on http://localhost:' +
-    app.get('port') + '; press Ctrl-C to terminate.');
+http.createServer(app).listen(app.get('port'), function(){
+  console.log( 'Express started in ' + app.get('env') +
+    ' mode on http://localhost:' + app.get('port') +
+    '; press Ctrl-C to terminate.' );
 });
