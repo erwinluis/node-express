@@ -305,6 +305,19 @@ app.get('/cart', function(req, res){
   res.render('cart', { cart: cart });
 });
 
+app.get('/cart/checkout', function(req, res, next){
+  var cart = req.session.cart;
+  if(!cart) next();
+  res.render('cart-checkout');
+});
+
+app.post('/cart/checkout', function(req, res){
+  var cart = req.session.cart;
+  if(!cart) next();
+  // TODO send confirmation email
+  res.redirect(303, '/');
+});
+
 // 404 catch-all handler (middleware)
 app.use(function(req, res, next){
   res.status(404);
