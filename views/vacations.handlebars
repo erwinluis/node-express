@@ -2,7 +2,7 @@
 
 {{#each vacations}}
   <div class="vacation">
-    <h3>{{name}}</h3>
+    <h3><a href="/vacation/{{slug}}"></a>{{name}}</h3>
     <p>{{description}}</p>
     {{#if inSeason}}
       <span class="price">{{price}}</span>

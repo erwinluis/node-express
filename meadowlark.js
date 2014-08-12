@@ -2,23 +2,21 @@ var http = require('http');
 
 var express = require('express');
 
-var credentials = require('./credentials.js');
-
-var emailService = require('./lib/email.js')(credentials);
-
 var fortune = require('./lib/fortune.js');
 
 var formidable = require('formidable');
 
 var fs = require('fs');
 
-Vacation = require('./models/vacation.js');
+var Vacation = require('./models/vacation.js');
 
-VacationInSeasonListener = require('./models/vacationInSeasonListener.js');
-
-var cartValidation = require('./lib/cartValidation.js');
+var VacationInSeasonListener = require('./models/vacationInSeasonListener.js');
 
 var app = express();
+
+var credentials = require('./credentials.js');
+
+var emailService = require('./lib/email.js')(credentials);
 
 // set up handlebars view engine
 var handlebars = require('express3-handlebars').create({
@@ -99,9 +97,7 @@ var sessionStore = new MongoSessionStore({url: credentials.mongo.development.con
 
 app.use(require('cookie-parser')(credentials.cookieSecret));
 app.use(expressSession({ store: sessionStore}));
-
 app.use(express.static(__dirname + '/public'));
-
 app.use(require('body-parser')());
 
 // database configuration
@@ -230,325 +226,22 @@ app.use(function(req, res, next){
   next();
 });
 
-// routes
+// create admin subdomain...this should appear
+// before all your other routes
+var admin = express.Router();
+app.use(require('vhost')('admin.*', admin));
 
-app.get('/headers', function(req, res){
-  res.set('Content-Type', 'text/plain');
-  var s = '';
-  for(var name in req.headers) s += name + ': ' +
-    req.headers[name] + '\n';
-  res.send(s);
+// create admin routes; these can be defined anywhere
+admin.get('/', function(req, res){
+  res.render('admin/home');
 });
 
-app.get('/', function(req, res){
-  res.render('home');
+admin.get('/users', function(req, res){
+  res.render('admin/users');
 });
 
-app.get('/about', function(req, res){
-  res.render('about', { fortune: fortune.getFortune(),
-                        pageTestScript: '/qa/tests-about.js' });
-});
-
-app.get('/request-group-rate', function(req, res){
-  res.render('request-group-rate');
-});
-
-app.get('/jquery-test', function(req, res){
-  res.render('jquery-test');
-});
-
-app.get('/nursery-rhyme', function(req, res){
-  res.render('nursery-rhyme');
-});
-
-app.get('/data/nursery-rhyme', function(req, res){
-  res.json({
-    animal: 'squirrel',
-    bodyPart: 'tail',
-    adjective: 'bushy',
-    noun: 'heck'
-  });
-});
-
-app.get('/thank-you', function(req, res){
-  res.render('thank-you');
-});
-
-app.get('/newsletter', function(req, res){
-  res.render('newsletter');
-});
-
-// for now, we're mocking NewsletterSignup:
-function NewsletterSignup(){
-}
-NewsletterSignup.prototype.save = function(cb){
-  cb();
-};
-
-var VALID_EMAIL_REGEX = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/;
-
-app.post('/newsletter', function(req, res){
-  var name = req.body.name || '';
-  var email = req.body.email || '';
-
-  // input validation
-  if(!email.match(VALID_EMAIL_REGEX)) {
-    if(req.xhr) return res.json({ error: 'Invalid name email address.'});
-    req.session.flash = {
-      type: 'danger',
-      intro: 'Validation error!',
-      message: 'The email address you entered was not valid.'
-    };
-    return res.redirect(303, '/newsletter/archive');
-  }
-  new NewsletterSignup({ name: name, email: email}).save(function(err){
-    if(err) {
-      if(req.xhr) return res.json({ error: 'Database error.'});
-      req.session.flash = {
-        type: 'danger',
-        intro: 'Database error!',
-        message: 'There was a databse error; please try again later.'
-      };
-      return res.redirect(303, '/newsletter/archive');
-    }
-    if(req.xhr) return res.json({ success: true });
-    req.session.flash = {
-      type: 'success',
-      intro: 'Thank you!',
-      message: 'You have now been signed up for the newsletter.'
-    };
-    return res.redirect(303, '/newsletter/archive');
-  });
-});
-
-app.get('/newsletter/archive', function(req, res){
-  res.render('newsletter/archive');
-});
-
-app.get('/contest/vacation-photo', function(req, res){
-  var now = new Date();
-  res.render('contest/vacation-photo', { year: now.getFullYear(),
-                                         month: now.getMonth() });
-});
-
-function saveContestEntry(contestName, email, year, month, photoPath){
-  // TODO...this will come later
-}
-
-// make sure data directory exists
-var dataDir = __dirname + '/data';
-var vacationPhotoDir = dataDir + '/vacation-photo';
-fs.existsSync(dataDir) || fs.mkdirSync(dataDir);
-fs.existsSync(vacationPhotoDir) || fs.mkdirSync(vacationPhotoDir);
-
-app.post('/contest/vacation-photo/:year/:month', function(req, res){
-  var form = new formidable.IncomingForm();
-  form.parse(req, function(err, fields, files){
-    if(err){
-      res.session.flash = {
-        type: 'danger',
-        intro: 'Oops!',
-        message: 'There was an error processing your submission. ' +
-                 'Please try again.'
-      };
-      return res.redirect(303,  '/contest/vacation-photo');
-    }
-    var photo = files.photo;
-    var dir = vacationPhotoDir + '/' + Date.now();
-    var path = dir + '/' + photo.name;
-    fs.mkdirSync(dir);
-    fs.renameSync(photo.path, dir + '/' + photo.name);
-    saveContestEntry('vacation-photo', fields.email,
-                      req.params.year, req.params.month, path);
-    req.session.flash = {
-      type: 'success',
-      intro: 'Good luck!',
-      message: 'You have been entered into the contest.'
-    };
-    return res.redirect(303, '/contest/vacation-photo/entries');
-  });
-});
-
-app.get('/contest/vacation-photo/entries', function(req, res){
-  res.render('contest/vacation-photo/entries');
-});
-
-app.get('/vacation/:vacation', function(req, res, next){
-  vacation.findOne({ slug: req.params.vacation }, function(err, vacation){
-    if(err) return next(err);
-    if(!vacation) return next();
-    res.render('vacation', { vacation: vacation });
-  });
-});
-
-function convertFromUSD(value, currency){
-  switch(currency){
-    case 'USD': return value * 1;
-    case 'GBP': return value * 0.6;
-    case 'BTC': return value * 0.0023707918444761;
-    default: return NaN;
-  }
-}
-
-app.get('/vacations', function(req, res){
-  Vacation.find({ available: true}, function(err, vacations){
-    var currency = req.session.currency || 'USD';
-    var context = {
-      currency: currency,
-      vacations: vacations.map(function(vacation){
-        return {
-          sku: vacation.sku,
-          name: vacation.name,
-          description: vacation.description,
-          inSeason: vacation.inSeason,
-          price: convertFromUSD(vacation.priceInCents/100, currency),
-          qty: vacation.qty
-        }
-      })
-    };
-    switch(currency){
-      case 'USD': context.currencyUSD = 'selected'; break;
-      case 'GBP': context.currencyGBP = 'selected'; break;
-      case 'BTC': context.currencyBTC = 'selected'; break;
-    }
-    res.render('vacations', context);
-  });
-});
-
-app.post('/vacations', function(req, res){
-  Vacation.findOne({ sku: req.body.purchaseSku}, function(err, vacation){
-    if(err || !vacation) {
-      req.session.flash = {
-        type: 'warning',
-        intro: 'Ooops!',
-        message: 'Something went wrong with your reservation; ' +
-                  'please <a href="/contact">contact us</a>'
-      };
-      return res.redirect(303, 'vacations');
-    }
-    vacation.packagesSold++;
-    vacation.save();
-    req.session.flash = {
-      type: 'success',
-      intro: 'Thank you!',
-      message: 'Your vacation has been booked.'
-    };
-    res.redirect(303, '/vacations');
-  });
-});
-
-app.use(cartValidation.checkWaivers);
-app.use(cartValidation.checkGuestCounts);
-
-app.get('/cart/add', function(req, res, next){
-  var cart = req.session.cart || (req.session.cart = { items: [] });
-  Vacation.findOne({ sku: req.query.sku }, function(err, vacation){
-    if(err) return next(err);
-    if(!vacation) return next(new Error('Unknown vacation SKU: ' + req.query.sku));
-    cart.items.push({
-      vacation: vacation,
-      guests: req.body.guests || 1
-    });
-    res.redirect(303, '/cart');
-  });
-});
-
-app.post('/cart/add', function(req, res, next){
-  var cart = req.session.cart || (req.session.cart = { items: [] });
-  Vacation.findOne({ sku: req.body.sku }, function(err, vacation){
-    if(err) return next(err);
-    if(!vacation) return next(new Error('Unknown vacation SKU: ' + req.body.sku));
-    cart.items.push({
-      vacation: vacation,
-      guests: req.body.guests || 1
-    });
-    res.redirect(303, '/cart');
-  });
-});
-
-app.get('/cart', function(req, res, next){
-  var cart = req.session.cart;
-  if(!cart) next();
-  res.render('cart', { cart: cart });
-});
-
-app.get('/cart/checkout', function(req, res, next){
-  var cart = req.session.cart;
-  if(!cart) next();
-  res.render('cart-checkout');
-});
-
-app.get('/cart/thank-you', function(req, res){
-  res.render('cart-thank-you', { cart: req.session.cart });
-});
-
-app.get('/email/cart/thank-you', function(req, res){
-  res.render('email/cart-thank-you', { cart: req.session.cart, layout: null});
-});
-
-app.post('/cart/checkout', function(req, res){
-  var cart = req.session.cart;
-  if(!cart) next(new Error('Cart does not exist.'));
-  // TODO send confirmation email
-  var name = req.body.name || '';
-  var email = req.body.email || '';
-  // input validation
-  if(!email.match(VALID_EMAIL_REGEX)) return res.next(new Error('Invalid email address.'));
-  // assign a random cart ID; normally we would use a database ID here
-  cart.number = Math.random().toString().replace(/^0\.0*/, '');
-  cart.billing = {
-    name: name,
-    email: email
-  };
-  res.render('email/cart-thank-you',
-    { layout: null, cart: cart}, function(err, html){
-      if(err) console.log('error in email template');
-      emailService.send(cart.billing.email,
-                        'Thank you for booking your trip with Meadowlark Travel',
-                        html);
-  });
-  res.render('cart-thank-you', {cart: cart});
-});
-
-app.get('/notify-me-when-in-season', function(req, res){
-  res.render('notify-me-when-in-season', { sku: req.query.sku });
-});
-
-app.post('/notify-me-when-in-season', function(req, res){
-  VacationInSeasonListener.update(
-      { email: req.body.email },
-      { $push: { skus: req.body.sku } },
-      { upsert: true },
-        function(err){
-          if(err) {
-            console.error(err.stack);
-            req.session.flash = {
-              type: 'danger',
-              intro: 'Ooops!',
-              message: 'There was an error processing your request.'
-            };
-            return res.redirect(303, '/vacations');
-          }
-          req.session.flash = {
-            type: 'success',
-            intro: 'Thank you!',
-            message: 'You will be notified when this vacation is in season.'
-          };
-          return res.redirect(303, '/vacations');
-        }
-    );
-});
-
-app.get('/set-currency/:currency', function(req, res){
-  req.session.currency = req.params.currency;
-  return res.redirect(303, '/vacations');
-});
-
-app.get('/epic-fail', function(req, res){
-  process.nextTick(function(){
-    throw new Error('Kaboom!');
-  });
-});
+// add routes
+require('./routes.js')(app);
 
 // 404 catch-all handler (middleware)
 app.use(function(req, res, next){
